@@ -6,10 +6,6 @@ Code for training and inference of deep learning models for 3D neuron segmentati
 
 
 
-\---
-
-
-
 \## Description
 
 
@@ -32,10 +28,6 @@ Supported model families include:
 
 
 
-\---
-
-
-
 \## Data
 
 
@@ -47,10 +39,6 @@ Datasets and pretrained results are \*\*not included\*\*.
 
 
 Input data should be prepared separately as 3D volumes with corresponding masks.
-
-
-
-\---
 
 
 
@@ -72,10 +60,6 @@ Refer to the scripts in the repository for specific commands and configurations.
 
 
 
-\---
-
-
-
 \## Notes
 
 
@@ -88,19 +72,11 @@ Refer to the scripts in the repository for specific commands and configurations.
 
 
 
-\---
-
-
-
 \## Citation
 
 
 
 If you use this code in your work, please cite the related publication (if available).
-
-
-
-\---
 
 
 
