@@ -20,8 +20,6 @@ This repository provides implementations and scripts to run segmentation models 
 
 Supported model families include:
 
-
-
 \- 3D U-Net
 
 \- nnU-Net
@@ -42,9 +40,7 @@ Supported model families include:
 
 
 
-This repository contains \*\*code only\*\*.
-
-
+This repository contains \*\*code only\*\*.  
 
 Datasets and pretrained results are \*\*not included\*\*.
 
@@ -63,8 +59,6 @@ Input data should be prepared separately as 3D volumes with corresponding masks.
 
 
 The code can be used to:
-
-
 
 \- train models
 
