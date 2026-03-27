@@ -128,8 +128,8 @@ mixed_precision = False     # StarDist loss functions incompatible with fp16
 #  8.  Logging  (Comet ML)
 # ══════════════════════════════════════════════════════════════════════════════
 
-comet_api_key     = "Yb0Ffy5WaM3qRxJ3qZAjvcboV"
-comet_workspace   = "podtyazhki1337"
+comet_api_key     = "APIKEY"
+comet_workspace   = "WORKSPACE"
 comet_project     = "stardist3d-neurons"
 
 

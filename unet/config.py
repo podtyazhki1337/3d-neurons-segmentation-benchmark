@@ -124,8 +124,8 @@ mixed_precision = False     # fp16 — test on your hardware first
 #  8.  Logging  (Comet ML)
 # ══════════════════════════════════════════════════════════════════════════════
 
-comet_api_key     = "Yb0Ffy5WaM3qRxJ3qZAjvcboV"
-comet_workspace   = "podtyazhki1337"
+comet_api_key     = "APIKEY"
+comet_workspace   = "workspace"
 comet_project     = "unet3d-neurons"
 
 
