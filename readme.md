@@ -1,14 +1,12 @@
-\# 3D Neurons Segmentation Models
+\# 3D Neuron Segmentation Models
 
 
 
-This repository contains code for training and inference of deep learning models for 3D neuron segmentation in volumetric microscopy data.
+Code for training and inference of deep learning models for 3D neuron segmentation in volumetric microscopy data.
 
 
 
-The repository includes code only.
-
-Datasets and pretrained results are not included.
+\---
 
 
 
@@ -16,23 +14,27 @@ Datasets and pretrained results are not included.
 
 
 
-The code in this repository is used to run segmentation models for 3D neuron microscopy volumes.
+This repository provides implementations and scripts to run segmentation models on 3D microscopy volumes.
 
 
 
-Supported model families in this project include:
+Supported model families include:
 
 
 
-\* 3D U-Net
+\- 3D U-Net
 
-\* nnU-Net
+\- nnU-Net
 
-\* Cellpose
+\- Cellpose
 
-\* StarDist
+\- StarDist
 
-\* micro-SAM
+\- micro-SAM
+
+
+
+\---
 
 
 
@@ -40,11 +42,19 @@ Supported model families in this project include:
 
 
 
-This repository does not include datasets.
+This repository contains \*\*code only\*\*.
 
 
 
-Input data are expected to be 3D microscopy volumes and corresponding masks prepared separately.
+Datasets and pretrained results are \*\*not included\*\*.
+
+
+
+Input data should be prepared separately as 3D volumes with corresponding masks.
+
+
+
+\---
 
 
 
@@ -52,15 +62,23 @@ Input data are expected to be 3D microscopy volumes and corresponding masks prep
 
 
 
-Use the scripts in this repository to:
+The code can be used to:
 
 
 
-\* train models
+\- train models
 
-\* run inference
+\- run inference
 
-\* reproduce model execution pipelines
+\- reproduce model execution pipelines
+
+
+
+Refer to the scripts in the repository for specific commands and configurations.
+
+
+
+\---
 
 
 
@@ -68,11 +86,15 @@ Use the scripts in this repository to:
 
 
 
-\* This repository provides code only.
+\- Dataset paths must be set manually
 
-\* Dataset paths must be set by the user.
+\- Setup may differ depending on the model
 
-\* Model-specific setup depends on the corresponding scripts and configurations included in the repository.
+\- No data is distributed with this repository
+
+
+
+\---
 
 
 
@@ -80,7 +102,11 @@ Use the scripts in this repository to:
 
 
 
-If you use this code in your work, please cite the related publication when available.
+If you use this code in your work, please cite the related publication (if available).
+
+
+
+\---
 
 
 
@@ -88,5 +114,5 @@ If you use this code in your work, please cite the related publication when avai
 
 
 
-For questions related to the code, please contact the repository author.
+For questions regarding the code, please contact the repository author.
 
