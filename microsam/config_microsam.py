@@ -25,20 +25,20 @@ import os
 #  1.  Paths
 # ══════════════════════════════════════════════════════════════════════════════
 
-in_dataset_dir = "/NAS/mmaiurov/datasets_benchmark/mice_neurons_dodt/"
+in_dataset_dir = "/NAS/mmaiurov/datasets_benchmark/rat_neurons_dodt/"
 
 # Where to save predictions (instance label TIFs).
 output_dir = "predictions"
-run_name   = "microsam_vit_b_lm_finetuned_mice_dodt"
+run_name   = "microsam_vit_b_lm_finetuned_rat_dodt"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  2.  Dataset / split
 # ══════════════════════════════════════════════════════════════════════════════
 
-dataset_id = "mice_neurons_dodt"
+dataset_id = "rat_neurons_dodt"
 modality   = "dodt"
-animal     = "mice"
+animal     = "rat"
 voxel_size = (1.0, 1.0, 1.0)    # µm (Z, Y, X) — placeholder
 
 
@@ -99,15 +99,15 @@ iou_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 #  6.  Hardware
 # ══════════════════════════════════════════════════════════════════════════════
 
-gpu_id = "1"
+gpu_id = "2"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  7.  Logging  (Comet ML)
 # ══════════════════════════════════════════════════════════════════════════════
 
-comet_api_key   = "APIKEY"
-comet_workspace = "WORKSPACE"
+comet_api_key   = ""
+comet_workspace = ""
 comet_project   = "microsam-neurons"
 
 
@@ -119,10 +119,10 @@ comet_project   = "microsam-neurons"
 sam_n_epochs          = 100
 sam_lr                = 1e-5
 sam_early_stopping    = 15
-sam_n_objects_per_batch = 40
+sam_n_objects_per_batch = 10
 sam_freeze            = None       # e.g. ["image_encoder"] to freeze encoder
 sam_batch_size        = 1
-sam_patch_shape       = (512, 512) # 2D crop from each slice
+sam_patch_shape       = (768, 768) # 2D crop from each slice
 
 # --- Step 2: train UNETR instance segmentation decoder ---
 unetr_n_epochs        = 100
@@ -132,12 +132,12 @@ unetr_batch_size      = 1
 unetr_patch_shape     = (512, 512)
 train_unetr = False
 # Common
-n_samples_train       = 2000     # None = use all slices
-n_samples_val         = 300
-min_labels_per_slice  = 1         # skip slices with fewer instances
+n_samples_train       = None     # None = use all slices
+n_samples_val         = None
+min_labels_per_slice  = 2       # skip slices with fewer instances
 
 # Model save name (checkpoints go to ./checkpoints/{model_save_name}/)
-model_save_name       = "microsam_vit_b_lm_finetuned_mice_dodt"
+model_save_name       = "microsam_vit_b_lm_finetuned_rat_dodt"
 
 # Prepared 2D slices directory (auto-generated from 3D stacks).
 # Stored on NAS alongside the dataset, same as cellpose/nnunet.

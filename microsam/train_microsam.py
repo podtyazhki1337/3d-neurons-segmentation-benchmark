@@ -11,7 +11,8 @@ All parameters from config_microsam.py; logs to Comet ML.
 """
 
 from __future__ import annotations
-
+import torch_em
+import torch_em.loss
 import os
 import sys
 import json
@@ -22,8 +23,8 @@ from glob import glob
 
 import numpy as np
 import tifffile
-
-# ── GPU setup ────────────────────────────────────────────────────────────────
+from torch_em.data import MinForegroundSampler
+# ── GPU setup ───────────────────────────────────────────────────────────
 import config_microsam as config
 
 os.environ["CUDA_VISIBLE_DEVICES"] = config.gpu_id
@@ -237,6 +238,7 @@ def main():
         n_samples=config.n_samples_train,
         shuffle=True,
         num_workers=4,
+
     )
 
     sam_val_loader = default_sam_loader(
@@ -251,23 +253,100 @@ def main():
         n_samples=config.n_samples_val,
         shuffle=False,
         num_workers=4,
+
     )
 
     t0 = time.time()
 
-    train_sam(
-        name=config.model_save_name,
-        model_type=config.model_type,
-        train_loader=sam_train_loader,
-        val_loader=sam_val_loader,
-        n_epochs=config.sam_n_epochs,
-        lr=config.sam_lr,
-        early_stopping=config.sam_early_stopping,
-        n_objects_per_batch=config.sam_n_objects_per_batch,
-        with_segmentation_decoder=True,
-        freeze=config.sam_freeze,
-        save_root="./checkpoints",
+    # --- Check if we can resume from a latest checkpoint ---
+    _ckpt_folder = os.path.join(
+        "./checkpoints", "checkpoints", config.model_save_name
     )
+    _latest_pt = os.path.join(_ckpt_folder, "latest.pt")
+    _resume_from = _latest_pt if os.path.exists(_latest_pt) else None
+
+    if _resume_from:
+        print(f"  ★ Resuming from checkpoint: {_resume_from}")
+        # Build the trainer manually so we can pass load_from_checkpoint
+        from micro_sam.training.training import (
+            _check_loader, _filter_warnings, _get_trainer_fit_params,
+            _get_optimizer_and_scheduler,
+        )
+        from micro_sam.training.util import get_trainable_sam_model, ConvertToSamInputs
+        from micro_sam.instance_segmentation import get_unetr
+        from micro_sam.training import joint_sam_trainer as joint_trainers
+        from micro_sam.util import get_device as msam_get_device
+
+        with _filter_warnings(True):
+            device = msam_get_device(None)
+            model, state = get_trainable_sam_model(
+                model_type=config.model_type, device=device,
+                freeze=config.sam_freeze, return_state=True,
+            )
+            convert_inputs = ConvertToSamInputs(
+                transform=model.transform, box_distortion_factor=0.025,
+            )
+            unetr = get_unetr(
+                image_encoder=model.sam.image_encoder,
+                decoder_state=state.get("decoder_state", None),
+                device=device,
+            )
+            joint_model_params = [p for p in model.parameters()]
+            for pname, p in unetr.named_parameters():
+                if not pname.startswith("encoder"):
+                    joint_model_params.append(p)
+
+            optimizer, scheduler = _get_optimizer_and_scheduler(
+                joint_model_params, config.sam_lr,
+                torch.optim.AdamW,
+                torch.optim.lr_scheduler.ReduceLROnPlateau, None,
+            )
+            instance_seg_loss = torch_em.loss.DiceBasedDistanceLoss(
+                mask_distances_in_bg=True,
+            )
+            trainer = joint_trainers.JointSamTrainer(
+                name=config.model_save_name,
+                save_root="./checkpoints",
+                train_loader=sam_train_loader,
+                val_loader=sam_val_loader,
+                model=model,
+                optimizer=optimizer,
+                device=device,
+                lr_scheduler=scheduler,
+                logger=joint_trainers.JointSamLogger,
+                log_image_interval=100,
+                mixed_precision=True,
+                convert_inputs=convert_inputs,
+                n_objects_per_batch=config.sam_n_objects_per_batch,
+                n_sub_iteration=8,
+                compile_model=False,
+                unetr=unetr,
+                instance_loss=instance_seg_loss,
+                instance_metric=instance_seg_loss,
+                early_stopping=config.sam_early_stopping,
+                mask_prob=0.5,
+            )
+            trainer.fit(
+                epochs=config.sam_n_epochs,
+                load_from_checkpoint="latest",
+            )
+    else:
+        print("  No checkpoint found, training from scratch")
+        train_sam(
+            name=config.model_save_name,
+            model_type=config.model_type,
+            train_loader=sam_train_loader,
+            val_loader=sam_val_loader,
+            n_epochs=config.sam_n_epochs,
+            lr=config.sam_lr,
+            early_stopping=config.sam_early_stopping,
+            n_objects_per_batch=config.sam_n_objects_per_batch,
+            with_segmentation_decoder=True,
+            freeze=config.sam_freeze,
+            save_root="./checkpoints",
+            verify_n_labels_in_loader=None,
+            
+        )
 
     sam_time = time.time() - t0
     print(f"\nStage 1 completed in {sam_time / 60:.1f} min")
