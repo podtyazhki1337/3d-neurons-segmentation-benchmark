@@ -9,7 +9,7 @@ This repository provides implementations and scripts to run segmentation models 
 Supported model families include:
 
 * 3D U-Net
-* nnU-Net
+* nnU-Net v2
 * Cellpose
 * StarDist
 * micro-SAM
