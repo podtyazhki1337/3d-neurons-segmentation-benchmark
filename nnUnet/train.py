@@ -26,7 +26,7 @@ from pathlib import Path
 import config
 
 
-def run_cmd(cmd: str, env: dict | None = None):
+def run_cmd(cmd: str, env: dict | None = None, allow_fail: bool = False):
     """Run a shell command, streaming output."""
     merged_env = {**os.environ, **(env or {})}
     print(f"\n{'─'*60}")
@@ -34,8 +34,12 @@ def run_cmd(cmd: str, env: dict | None = None):
     print(f"{'─'*60}\n")
     result = subprocess.run(cmd, shell=True, env=merged_env)
     if result.returncode != 0:
+        if allow_fail:
+            print(f"\n⚠️  Command exited with code {result.returncode} (ignored)")
+            return result.returncode
         print(f"\n❌  Command failed with return code {result.returncode}")
         sys.exit(result.returncode)
+    return 0
 
 
 def verify_dataset():
@@ -102,11 +106,26 @@ def preprocess():
     )
 
 
+def is_cross_domain() -> bool:
+    """Check if current dataset is a cross-domain experiment."""
+    ds_dir = os.path.join(config.nnunet_raw, config.nnunet_dataset_name)
+    ds_json_path = os.path.join(ds_dir, "dataset.json")
+    if os.path.exists(ds_json_path):
+        with open(ds_json_path) as f:
+            ds = json.load(f)
+        return ds.get("cross_domain_experiment", False)
+    return False
+
+
 def train():
     """Run nnU-Net training."""
     ds_id   = config.nnunet_dataset_id
     cfg     = config.configuration
     folds   = config.folds
+    xd      = is_cross_domain()
+
+    if xd:
+        print("ℹ️  Cross-domain dataset detected — post-training validation will be skipped on error.")
 
     # Always use Comet trainer — nnU-Net augmentations are built-in and always active.
     trainer = "nnUNetTrainer_Comet"
@@ -144,7 +163,9 @@ def train():
         if config.num_epochs != 1000:
             cmd += f" --npz"  # save softmax for ensemble
 
-        run_cmd(cmd, env=env)
+        # Cross-domain: post-training validation may fail (no gt_segmentations)
+        # but model weights are already saved — this is expected.
+        run_cmd(cmd, env=env, allow_fail=xd)
 
 
 def main():

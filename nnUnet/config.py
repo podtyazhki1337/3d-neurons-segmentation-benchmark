@@ -26,7 +26,7 @@ import os
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Raw dataset — must contain images/ and masks/ with matching .tif names.
-in_dataset_dir = "/NAS/mmaiurov/datasets_benchmark/mice_neurons_dodt/"
+in_dataset_dir = "/NAS/mmaiurov/datasets_benchmark/mice_neurons_oblique/"
 
 # nnU-Net directory roots (from env variables, with fallbacks).
 nnunet_raw           = os.environ.get("nnUNet_raw",          "/NAS/mmaiurov/nnUNet_data/nnUNet_raw")
@@ -46,8 +46,8 @@ force_val  = []
 force_test = []
 
 # Metadata for Comet logging.
-dataset_id = "mice_neurons_dodt"
-modality   = "DODT"
+dataset_id = "mice_neurons_oblique"
+modality   = "Oblique"
 animal     = "mice"
 voxel_size = (1.0, 1.0, 1.0)   # µm (Z, Y, X) — placeholder
 
@@ -57,8 +57,8 @@ voxel_size = (1.0, 1.0, 1.0)   # µm (Z, Y, X) — placeholder
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Dataset ID — nnU-Net uses DatasetXXX_Name format.
-nnunet_dataset_id   = 2
-nnunet_dataset_name = "Dataset002_MiceNeuronsDodt"
+nnunet_dataset_id   = 6
+nnunet_dataset_name = "Dataset006_MiceNeuronsOblique"
 
 # Segmentation approach: "binary" or "threeclass"
 #   binary     → 0=bg, 1=neuron → CC post-processing for instances
@@ -135,9 +135,9 @@ gpu_id = 0
 #  9.  Logging — Comet ML
 # ══════════════════════════════════════════════════════════════════════════════
 
-comet_api_key    = "APIKEY"           # fill in or use COMET_API_KEY env var
-comet_project    = "nnunet3d-neurons"
-comet_workspace  = "WORKSPACE"           # fill in
+comet_api_key    = ""           # fill in or use COMET_API_KEY env var
+comet_project    = ""
+comet_workspace  = ""           # fill in
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -145,3 +145,103 @@ comet_workspace  = "WORKSPACE"           # fill in
 # ══════════════════════════════════════════════════════════════════════════════
 
 seed = 42
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 11.  Cross-domain experiments
+# ══════════════════════════════════════════════════════════════════════════════
+# Each experiment creates a merged dataset from multiple sources.
+# train_sources[].use: "train" = train split, "train+val" = both, "all" = everything
+# test_sources[].name: dataset to run inference on (uses its own split.json test set)
+#
+# After defining experiments:
+#   python merge_datasets.py          # create merged datasets
+#   python train.py                   # train (set nnunet_dataset_id/name to merged one)
+#   python eval.py --subset test      # eval on each test source
+
+cross_domain_experiments = [
+
+    # ── Exp 1: Train on Rat+Mice DODT → Test on Human DODT ──────────────
+    {
+        "dataset_id": 101,
+        "dataset_name": "Dataset101_XD_RatMice_Dodt",
+        "description": "Cross-species: rat+mice DODT → human DODT",
+        "train_sources": [
+            {"name": "Dataset003_RatNeuronsDodt", "use": "train"},
+            {"name": "Dataset002_MiceNeuronsDodt", "use": "train"},
+        ],
+        "test_sources": [
+            {"name": "Dataset001_HumanNeuronsDodt", "use": "test"},
+        ],
+    },
+
+    # ── Exp 2: Train on Rat+Mice Oblique → Test on Human Oblique ────────
+    {
+        "dataset_id": 102,
+        "dataset_name": "Dataset102_XD_RatMice_Oblique",
+        "description": "Cross-species: rat+mice oblique → human oblique",
+        "train_sources": [
+            {"name": "Dataset005_RatNeuronsOblique", "use": "train"},
+            {"name": "Dataset006_MiceNeuronsOblique", "use": "train"},
+        ],
+        "test_sources": [
+            {"name": "Dataset004_HumanNeuronsOblique", "use": "test"},
+        ],
+    },
+
+    # ── Exp 3: Train on all 3 DODT → Test on own test sets ──────────────
+    {
+        "dataset_id": 103,
+        "dataset_name": "Dataset103_XD_AllSpecies_Dodt",
+        "description": "Mixed-species DODT: all 3 species combined",
+        "train_sources": [
+            {"name": "Dataset001_HumanNeuronsDodt", "use": "train"},
+            {"name": "Dataset002_MiceNeuronsDodt", "use": "train"},
+            {"name": "Dataset003_RatNeuronsDodt", "use": "train"},
+        ],
+        "test_sources": [
+            {"name": "Dataset001_HumanNeuronsDodt", "use": "test"},
+            {"name": "Dataset002_MiceNeuronsDodt", "use": "test"},
+            {"name": "Dataset003_RatNeuronsDodt", "use": "test"},
+        ],
+    },
+
+    # ── Exp 4: Train on all 3 Oblique → Test on own test sets ────────────
+    {
+        "dataset_id": 104,
+        "dataset_name": "Dataset104_XD_AllSpecies_Oblique",
+        "description": "Mixed-species oblique: all 3 species combined",
+        "train_sources": [
+            {"name": "Dataset004_HumanNeuronsOblique", "use": "train"},
+            {"name": "Dataset005_RatNeuronsOblique", "use": "train"},
+            {"name": "Dataset006_MiceNeuronsOblique", "use": "train"},
+        ],
+        "test_sources": [
+            {"name": "Dataset004_HumanNeuronsOblique", "use": "test"},
+            {"name": "Dataset005_RatNeuronsOblique", "use": "test"},
+            {"name": "Dataset006_MiceNeuronsOblique", "use": "test"},
+        ],
+    },
+
+    # ── Exp 5: Mixed-modality DODT+Oblique (all species) ─────────────────
+    {
+        "dataset_id": 105,
+        "dataset_name": "Dataset105_XD_AllSpecies_Mixed",
+        "description": "Mixed-modality+species: all 6 datasets combined",
+        "train_sources": [
+            {"name": "Dataset001_HumanNeuronsDodt", "use": "train"},
+            {"name": "Dataset002_MiceNeuronsDodt", "use": "train"},
+            {"name": "Dataset003_RatNeuronsDodt", "use": "train"},
+            {"name": "Dataset004_HumanNeuronsOblique", "use": "train"},
+            {"name": "Dataset005_RatNeuronsOblique", "use": "train"},
+            {"name": "Dataset006_MiceNeuronsOblique", "use": "train"},
+        ],
+        "test_sources": [
+            {"name": "Dataset001_HumanNeuronsDodt", "use": "test"},
+            {"name": "Dataset002_MiceNeuronsDodt", "use": "test"},
+            {"name": "Dataset003_RatNeuronsDodt", "use": "test"},
+            {"name": "Dataset004_HumanNeuronsOblique", "use": "test"},
+            {"name": "Dataset005_RatNeuronsOblique", "use": "test"},
+            {"name": "Dataset006_MiceNeuronsOblique", "use": "test"},
+        ],
+    },
+]

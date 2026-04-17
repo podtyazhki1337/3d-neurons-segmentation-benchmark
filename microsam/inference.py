@@ -39,127 +39,173 @@ N_SLICES = 10   # Z-slices for visualization
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  Metrics (fast, bincount-based — same as eval_unet3d.py)
+#  Metrics (aligned with benchmark_evaluation — Hungarian + proper AP)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _iou_matrix(gt, pred):
-    """IoU matrix via bincount."""
+from scipy.optimize import linear_sum_assignment
+
+IOU_THRESH = 0.5
+MAP_THRESHOLDS = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+
+
+def iou_matrix(gt, pred):
+    """IoU matrix via bincount. Returns gt_ids, pred_ids, iou, overlap, gt_vols, pred_vols."""
     gt_ids   = np.unique(gt);   gt_ids   = gt_ids[gt_ids != 0]
     pred_ids = np.unique(pred); pred_ids = pred_ids[pred_ids != 0]
-    n_gt, n_pred = len(gt_ids), len(pred_ids)
-    if n_gt == 0 or n_pred == 0:
-        return gt_ids, pred_ids, np.zeros((n_gt, n_pred))
+    ng, np_ = len(gt_ids), len(pred_ids)
+    if ng == 0 or np_ == 0:
+        return (gt_ids, pred_ids,
+                np.zeros((ng, np_), dtype=np.float64),
+                np.zeros((ng, np_), dtype=np.int64),
+                np.zeros(ng, dtype=np.int64),
+                np.zeros(np_, dtype=np.int64))
 
-    gt_remap   = np.zeros(int(gt.max()) + 1, dtype=np.int32)
-    pred_remap = np.zeros(int(pred.max()) + 1, dtype=np.int32)
-    for i, gid in enumerate(gt_ids, 1):   gt_remap[gid] = i
-    for j, pid in enumerate(pred_ids, 1): pred_remap[pid] = j
+    gt_rm = np.zeros(int(gt.max()) + 1, dtype=np.int64)
+    pr_rm = np.zeros(int(pred.max()) + 1, dtype=np.int64)
+    for i, g in enumerate(gt_ids):   gt_rm[g] = i + 1
+    for j, p in enumerate(pred_ids): pr_rm[p] = j + 1
 
-    n_p1  = np.int64(n_pred + 1)
-    codes = gt_remap[gt.ravel()].astype(np.int64) * n_p1 + \
-            pred_remap[pred.ravel()].astype(np.int64)
-    table = np.bincount(codes, minlength=int((n_gt + 1) * n_p1)) \
-              .reshape(n_gt + 1, int(n_p1))
+    np1 = np.int64(np_ + 1)
+    codes = gt_rm[gt.ravel()] * np1 + pr_rm[pred.ravel()]
+    tbl = np.bincount(codes, minlength=int((ng + 1) * np1)).reshape(ng + 1, int(np1))
 
-    overlap   = table[1:, 1:].astype(np.float64)
-    gt_vols   = table[1:, :].sum(1).astype(np.float64)
-    pred_vols = table[:, 1:].sum(0).astype(np.float64)
-    union     = gt_vols[:, None] + pred_vols[None, :] - overlap
-    iou       = np.where(union > 0, overlap / union, 0.0)
-    return gt_ids, pred_ids, iou
+    ov = tbl[1:, 1:].copy()
+    gv = tbl[1:, :].sum(1)
+    pv = tbl[:, 1:].sum(0)
+    un = gv[:, None] + pv[None, :] - ov
+    iou = np.zeros_like(ov, dtype=np.float64)
+    m = un > 0
+    iou[m] = ov[m].astype(np.float64) / un[m].astype(np.float64)
+    return gt_ids, pred_ids, iou, ov, gv, pv
 
 
-def _greedy_match(iou, thresh):
-    w = iou.copy()
+def hungarian_match(iou_mat, thresh):
+    """Optimal matching via Hungarian algorithm."""
+    if iou_mat.size == 0:
+        return []
+    gt_has_overlap = np.any(iou_mat > 0, axis=1)
+    pr_has_overlap = np.any(iou_mat > 0, axis=0)
+    gt_idx = np.where(gt_has_overlap)[0]
+    pr_idx = np.where(pr_has_overlap)[0]
+    if len(gt_idx) == 0 or len(pr_idx) == 0:
+        return []
+    sub = iou_mat[np.ix_(gt_idx, pr_idx)]
+    cost = -sub
+    row_ind, col_ind = linear_sum_assignment(cost)
     matches = []
-    while True:
-        idx = np.unravel_index(np.argmax(w), w.shape)
-        if w[idx] < thresh:
-            break
-        matches.append((idx[0], idx[1], float(w[idx])))
-        w[idx[0], :] = 0.0
-        w[:, idx[1]] = 0.0
+    for r, c in zip(row_ind, col_ind):
+        iou_val = sub[r, c]
+        if iou_val >= thresh:
+            matches.append((int(gt_idx[r]), int(pr_idx[c]), float(iou_val)))
     return matches
 
 
-def _f1_from_iou(iou_mat, n_gt, n_pred, thresh):
-    """F1/Prec/Rec and mean matched IoU at one threshold."""
+def obj_metrics_at_thresh(iou_mat, n_gt, n_pred, thresh):
+    """Object-level F1, Prec, Rec, mean matched IoU at one IoU threshold."""
     if n_gt == 0 and n_pred == 0:
-        return 1., 1., 1., 1.
+        return dict(f1=1., precision=1., recall=1., mean_iou=1., tp=0, fp=0, fn=0)
     if n_gt == 0:
-        return 0., 0., 1., 0.
+        return dict(f1=0., precision=0., recall=0., mean_iou=0., tp=0, fp=n_pred, fn=0)
     if n_pred == 0:
-        return 0., 1., 0., 0.
+        return dict(f1=0., precision=0., recall=0., mean_iou=0., tp=0, fp=0, fn=n_gt)
 
-    matches = _greedy_match(iou_mat, thresh)
+    matches = hungarian_match(iou_mat, thresh)
     tp = len(matches)
     fp = n_pred - tp
     fn = n_gt - tp
+    pr = tp / (tp + fp) if tp + fp > 0 else 0.
+    rc = tp / (tp + fn) if tp + fn > 0 else 0.
+    f1 = 2 * pr * rc / (pr + rc) if pr + rc > 0 else 0.
+    sum_iou = sum(m[2] for m in matches)
+    mi = sum_iou / n_gt if n_gt > 0 else 0.
+    return dict(f1=f1, precision=pr, recall=rc, mean_iou=mi, tp=tp, fp=fp, fn=fn)
 
-    prec = tp / (tp + fp) if (tp + fp) > 0 else 0.
-    rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.
-    f1   = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.
-    obj_iou = float(np.sum([m[2] for m in matches]) / n_gt) if n_gt > 0 else 0.
-    return f1, prec, rec, obj_iou
 
-
-def compute_aji(gt, pred):
-    gt_ids   = np.unique(gt);   gt_ids   = gt_ids[gt_ids != 0]
-    pred_ids = np.unique(pred); pred_ids = pred_ids[pred_ids != 0]
-    n_gt, n_pred = len(gt_ids), len(pred_ids)
-    if n_gt == 0 and n_pred == 0: return 1.
-    if n_gt == 0 or  n_pred == 0: return 0.
-
-    gt_remap   = np.zeros(int(gt.max()) + 1, dtype=np.int32)
-    pred_remap = np.zeros(int(pred.max()) + 1, dtype=np.int32)
-    for i, gid in enumerate(gt_ids, 1):   gt_remap[gid] = i
-    for j, pid in enumerate(pred_ids, 1): pred_remap[pid] = j
-
-    n_p1  = np.int64(n_pred + 1)
-    codes = gt_remap[gt.ravel()].astype(np.int64) * n_p1 + \
-            pred_remap[pred.ravel()].astype(np.int64)
-    table = np.bincount(codes, minlength=int((n_gt + 1) * n_p1)) \
-              .reshape(n_gt + 1, int(n_p1))
-
-    overlap   = table[1:, 1:]
-    gt_vols   = table[1:, :].sum(1)
-    pred_vols = table[:, 1:].sum(0)
+def compute_aji(gt_ids, pred_ids, iou_mat, overlap, gt_vols, pred_vols):
+    """Aggregated Jaccard Index (Kumar 2017)."""
+    ng, np_ = len(gt_ids), len(pred_ids)
+    if ng == 0 and np_ == 0: return 1.
+    if ng == 0 or  np_ == 0: return 0.
 
     used = set()
-    s_i = s_u = 0
-    for i in range(n_gt):
-        nz = np.nonzero(overlap[i])[0]
-        best_j, best_iou = -1, 0.
-        for j in nz:
+    si, su = 0, 0
+    for i in range(ng):
+        bj, bv = -1, 0.
+        for j in range(np_):
             if j in used:
                 continue
-            inter = int(overlap[i, j])
-            union = int(gt_vols[i]) + int(pred_vols[j]) - inter
-            cur = inter / union if union > 0 else 0.
-            if cur > best_iou:
-                best_iou, best_j = cur, j
-        if best_j >= 0:
-            used.add(best_j)
-            s_i += int(overlap[i, best_j])
-            s_u += int(gt_vols[i]) + int(pred_vols[best_j]) - int(overlap[i, best_j])
+            if iou_mat[i, j] > bv:
+                bv = iou_mat[i, j]; bj = j
+        if bj >= 0 and bv > 0:
+            inter = int(overlap[i, bj])
+            union = int(gt_vols[i]) + int(pred_vols[bj]) - inter
+            si += inter; su += union; used.add(bj)
         else:
-            s_u += int(gt_vols[i])
-    for j in range(n_pred):
+            su += int(gt_vols[i])
+    for j in range(np_):
         if j not in used:
-            s_u += int(pred_vols[j])
-    return s_i / s_u if s_u > 0 else 0.
+            su += int(pred_vols[j])
+    return si / su if su > 0 else 0.
 
 
-def compute_pixel_metrics(gt, pred):
-    g, p = gt > 0, pred > 0
-    tp = int(np.logical_and(g, p).sum())
-    fp = int(np.logical_and(~g, p).sum())
-    fn = int(np.logical_and(g, ~p).sum())
-    pr  = tp / (tp + fp) if (tp + fp) > 0 else 1.
-    rc  = tp / (tp + fn) if (tp + fn) > 0 else 1.
-    f1  = 2 * pr * rc / (pr + rc) if (pr + rc) > 0 else 0.
-    iou = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 1.
-    return dict(px_f1=f1, px_iou=iou, px_prec=pr, px_rec=rc)
+def compute_ap_single_thresh(iou_mat, n_gt, n_pred, thresh):
+    """Average Precision at a single IoU threshold (101-point interpolation)."""
+    if n_gt == 0 and n_pred == 0: return 1.
+    if n_gt == 0: return 0.
+    if n_pred == 0: return 0.
+
+    pred_scores = iou_mat.max(axis=0)
+    sorted_j = np.argsort(-pred_scores)
+    matched_gt = np.zeros(n_gt, dtype=bool)
+    tps = np.zeros(n_pred, dtype=np.float64)
+    fps = np.zeros(n_pred, dtype=np.float64)
+
+    for rank, j in enumerate(sorted_j):
+        best_i, best_iou = -1, 0.
+        for i in range(n_gt):
+            if matched_gt[i]:
+                continue
+            if iou_mat[i, j] > best_iou:
+                best_iou = iou_mat[i, j]
+                best_i = i
+        if best_i >= 0 and best_iou >= thresh:
+            tps[rank] = 1
+            matched_gt[best_i] = True
+        else:
+            fps[rank] = 1
+
+    tp_cum = np.cumsum(tps)
+    fp_cum = np.cumsum(fps)
+    recalls    = tp_cum / n_gt
+    precisions = tp_cum / (tp_cum + fp_cum)
+
+    ap = 0.
+    for t in np.linspace(0, 1, 101):
+        mask = recalls >= t
+        if mask.any():
+            ap += precisions[mask].max()
+    return ap / 101.
+
+
+def compute_mAP(iou_mat, n_gt, n_pred):
+    """mAP@0.5:0.95 (COCO-style)."""
+    return float(np.mean([
+        compute_ap_single_thresh(iou_mat, n_gt, n_pred, t)
+        for t in MAP_THRESHOLDS
+    ]))
+
+
+def pixel_metrics(gt, pred):
+    """Pixel-level Dice, IoU, Precision, Recall."""
+    g, p = (gt > 0), (pred > 0)
+    tp = int(np.sum(g & p))
+    fp = int(np.sum(~g & p))
+    fn = int(np.sum(g & ~p))
+    pr   = tp / (tp + fp) if tp + fp > 0 else 1.
+    rc   = tp / (tp + fn) if tp + fn > 0 else 1.
+    dice = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 1.
+    iou  = tp / (tp + fp + fn) if (tp + fp + fn) > 0 else 1.
+    return dict(pixel_dice=dice, pixel_iou=iou, pixel_prec=pr, pixel_rec=rc)
 
 
 def tp_fp_fn_overlay(gs, ps):
@@ -325,42 +371,49 @@ def main():
         preds_all.append(pred)
         gt = Y_raw[i]
 
-        # ── All metrics (same as eval_unet3d) ────────────────────────────
-        gt_ids, pred_ids, iou_mat = _iou_matrix(gt, pred)
+        # ── All metrics (aligned with benchmark_evaluation) ─────────────────
+        gt_ids, pred_ids, iou_mat, overlap, gt_vols, pred_vols = iou_matrix(gt, pred)
         n_gt, n_pred = len(gt_ids), len(pred_ids)
 
-        f1, prec, rec, obj_iou = _f1_from_iou(iou_mat, n_gt, n_pred, 0.5)
-        aji = compute_aji(gt, pred)
-        px  = compute_pixel_metrics(gt, pred)
+        obj = obj_metrics_at_thresh(iou_mat, n_gt, n_pred, IOU_THRESH)
+        aji = compute_aji(gt_ids, pred_ids, iou_mat, overlap, gt_vols, pred_vols)
+        mAP = compute_mAP(iou_mat, n_gt, n_pred)
+        px  = pixel_metrics(gt, pred)
 
-        r = dict(file=file_list[i], n_gt=n_gt, n_pred=n_pred,
-                 aji=aji, obj_f1=f1, obj_prec=prec, obj_rec=rec, obj_iou=obj_iou,
-                 px_f1=px["px_f1"], px_iou=px["px_iou"],
-                 px_prec=px["px_prec"], px_rec=px["px_rec"],
-                 time_sec=dt)
+        r = dict(
+            file=file_list[i], n_gt=n_gt, n_pred=n_pred,
+            aji=aji,
+            obj_f1=obj["f1"], obj_prec=obj["precision"],
+            obj_rec=obj["recall"], obj_iou=obj["mean_iou"],
+            mAP=mAP,
+            pixel_dice=px["pixel_dice"], pixel_iou=px["pixel_iou"],
+            pixel_prec=px["pixel_prec"], pixel_rec=px["pixel_rec"],
+            time_sec=dt,
+        )
 
-        # F1 at all thresholds
+        # F1 at all IoU thresholds (for per-threshold analysis)
         for t in TAUS:
-            f1_t, _, _, _ = _f1_from_iou(iou_mat, n_gt, n_pred, t)
-            r[f"f1_{t:.1f}"] = f1_t
+            obj_t = obj_metrics_at_thresh(iou_mat, n_gt, n_pred, t)
+            r[f"f1_{t:.1f}"] = obj_t["f1"]
 
         results.append(r)
         print(f"  GT={n_gt}  Pred={n_pred}  "
-              f"AJI={100*aji:.2f}%  F1@.5={100*f1:.2f}%  "
-              f"PxIoU={100*px['px_iou']:.2f}%  ({dt:.1f}s)")
+              f"AJI={100*aji:.2f}%  F1@.5={100*obj['f1']:.2f}%  "
+              f"mAP={100*mAP:.2f}%  PxIoU={100*px['pixel_iou']:.2f}%  ({dt:.1f}s)")
 
         if experiment:
             experiment.log_metrics({
-                f"per_stack/{file_list[i]}/aji":       aji,
-                f"per_stack/{file_list[i]}/obj_f1":    f1,
-                f"per_stack/{file_list[i]}/obj_prec":  prec,
-                f"per_stack/{file_list[i]}/obj_rec":   rec,
-                f"per_stack/{file_list[i]}/obj_iou":   obj_iou,
-                f"per_stack/{file_list[i]}/px_f1":     px["px_f1"],
-                f"per_stack/{file_list[i]}/px_iou":    px["px_iou"],
-                f"per_stack/{file_list[i]}/n_pred":    n_pred,
-                f"per_stack/{file_list[i]}/n_gt":      n_gt,
-                f"per_stack/{file_list[i]}/time_sec":  dt,
+                f"per_stack/{file_list[i]}/aji":        aji,
+                f"per_stack/{file_list[i]}/obj_f1":     obj["f1"],
+                f"per_stack/{file_list[i]}/obj_prec":   obj["precision"],
+                f"per_stack/{file_list[i]}/obj_rec":    obj["recall"],
+                f"per_stack/{file_list[i]}/obj_iou":    obj["mean_iou"],
+                f"per_stack/{file_list[i]}/mAP":        mAP,
+                f"per_stack/{file_list[i]}/pixel_dice": px["pixel_dice"],
+                f"per_stack/{file_list[i]}/pixel_iou":  px["pixel_iou"],
+                f"per_stack/{file_list[i]}/n_pred":     n_pred,
+                f"per_stack/{file_list[i]}/n_gt":       n_gt,
+                f"per_stack/{file_list[i]}/time_sec":   dt,
             })
 
         # Save prediction TIF
@@ -374,15 +427,16 @@ def main():
     print(f"  SUMMARY — {config.predict_on} ({len(X_raw)} stacks)")
     print(f"{'='*70}")
 
-    keys = [("aji",      "AJI"),
-            ("obj_f1",   "Obj F1 @0.5"),
-            ("obj_prec", "Obj Prec @0.5"),
-            ("obj_rec",  "Obj Rec @0.5"),
-            ("obj_iou",  "Obj IoU @0.5"),
-            ("px_f1",    "Pixel F1"),
-            ("px_iou",   "Pixel IoU"),
-            ("px_prec",  "Pixel Prec"),
-            ("px_rec",   "Pixel Rec")]
+    keys = [("aji",        "AJI"),
+            ("obj_f1",     "Obj F1 @0.5"),
+            ("obj_prec",   "Obj Prec @0.5"),
+            ("obj_rec",    "Obj Rec @0.5"),
+            ("obj_iou",    "Obj IoU @0.5"),
+            ("mAP",        "mAP @0.5:0.95"),
+            ("pixel_dice", "Pixel Dice"),
+            ("pixel_iou",  "Pixel IoU"),
+            ("pixel_prec", "Pixel Prec"),
+            ("pixel_rec",  "Pixel Rec")]
 
     summary = {}
     print()
@@ -392,22 +446,17 @@ def main():
         print(f"  {lbl:16s}  {100*mean_v:6.2f}% +/- {100*std_v:.2f}%")
         summary[k] = {"mean": float(mean_v), "std": float(std_v)}
 
-    map_val = float(np.mean([np.mean([r[f"f1_{t:.1f}"] for t in TAUS])
-                             for r in results]))
-    print(f"\n  {'mAP (F1@0.1-0.9)':16s}  {100*map_val:6.2f}%")
-    summary["mAP"] = map_val
-
     # Per-stack table
     print(f"\n  {'File':40s} {'GT':>4s} {'Pred':>5s} "
           f"{'AJI%':>6s} {'ObjF1':>6s} {'ObjPr':>6s} {'ObjRc':>6s} "
-          f"{'ObjIoU':>7s} {'PxF1':>5s} {'PxIoU':>6s} {'PxPr':>5s} {'PxRc':>5s}")
+          f"{'ObjIoU':>7s} {'mAP':>6s} {'Dice':>5s} {'PxIoU':>6s} {'PxPr':>5s} {'PxRc':>5s}")
     for r in results:
         print(f"  {r['file']:40s} {r['n_gt']:4d} {r['n_pred']:5d} "
               f"{100*r['aji']:6.2f} {100*r['obj_f1']:6.2f} "
               f"{100*r['obj_prec']:6.2f} {100*r['obj_rec']:6.2f} "
-              f"{100*r['obj_iou']:7.2f} "
-              f"{100*r['px_f1']:5.2f} {100*r['px_iou']:6.2f} "
-              f"{100*r['px_prec']:5.2f} {100*r['px_rec']:5.2f}")
+              f"{100*r['obj_iou']:7.2f} {100*r['mAP']:6.2f} "
+              f"{100*r['pixel_dice']:5.2f} {100*r['pixel_iou']:6.2f} "
+              f"{100*r['pixel_prec']:5.2f} {100*r['pixel_rec']:5.2f}")
 
     # ── Log summary to Comet ─────────────────────────────────────────────
     if experiment:
@@ -435,7 +484,6 @@ def main():
         "predict_on":  config.predict_on,
         "per_stack":   results,
         "summary":     summary,
-        "mAP":         map_val,
     }
     results_path = os.path.join(RESULTS_DIR, "results.json")
     with open(results_path, "w") as f:
@@ -460,8 +508,8 @@ def main():
         fig.suptitle(
             f"{file_list[idx]}  |  AJI={100*r['aji']:.2f}%  "
             f"F1@0.5={100*r['obj_f1']:.2f}%  "
-            f"ObjIoU={100*r['obj_iou']:.2f}%  "
-            f"PxIoU={100*r['px_iou']:.2f}%  "
+            f"mAP={100*r['mAP']:.2f}%  "
+            f"Dice={100*r['pixel_dice']:.2f}%  "
             f"GT={r['n_gt']}  Pred={r['n_pred']}",
             fontsize=12, y=1.0)
 
