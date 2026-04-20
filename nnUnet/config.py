@@ -57,8 +57,8 @@ voxel_size = (1.0, 1.0, 1.0)   # µm (Z, Y, X) — placeholder
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Dataset ID — nnU-Net uses DatasetXXX_Name format.
-nnunet_dataset_id   = 6
-nnunet_dataset_name = "Dataset006_MiceNeuronsOblique"
+nnunet_dataset_id   = 108
+nnunet_dataset_name = "Dataset108_XM_Human_DodtOblique"
 
 # Segmentation approach: "binary" or "threeclass"
 #   binary     → 0=bg, 1=neuron → CC post-processing for instances
@@ -135,9 +135,9 @@ gpu_id = 0
 #  9.  Logging — Comet ML
 # ══════════════════════════════════════════════════════════════════════════════
 
-comet_api_key    = ""           # fill in or use COMET_API_KEY env var
-comet_project    = ""
-comet_workspace  = ""           # fill in
+comet_api_key    = "Yb0Ffy5WaM3qRxJ3qZAjvcboV"           # fill in or use COMET_API_KEY env var
+comet_project    = "nnunet3d-neurons"
+comet_workspace  = "podtyazhki1337"           # fill in
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -242,6 +242,47 @@ cross_domain_experiments = [
             {"name": "Dataset004_HumanNeuronsOblique", "use": "test"},
             {"name": "Dataset005_RatNeuronsOblique", "use": "test"},
             {"name": "Dataset006_MiceNeuronsOblique", "use": "test"},
+        ],
+    },
+    # ── Exp 6: DODT model → Oblique test (cross-modality) ────────────────
+    {
+        "dataset_id": 106,
+        "dataset_name": "Dataset106_XM_Dodt2Oblique",
+        "model_from": "Dataset103_XD_AllSpecies_Dodt",  # use trained model from exp 103
+        "description": "Cross-modality: DODT-trained → Oblique inference",
+        "train_sources": [],  # no training — inference only
+        "test_sources": [
+            {"name": "Dataset004_HumanNeuronsOblique", "use": "test"},
+            {"name": "Dataset005_RatNeuronsOblique", "use": "test"},
+            {"name": "Dataset006_MiceNeuronsOblique", "use": "test"},
+        ],
+    },
+
+    # ── Exp 7: Oblique model → DODT test (cross-modality) ────────────────
+    {
+        "dataset_id": 107,
+        "dataset_name": "Dataset107_XM_Oblique2Dodt",
+        "model_from": "Dataset104_XD_AllSpecies_Oblique",  # use trained model from exp 104
+        "description": "Cross-modality: Oblique-trained → DODT inference",
+        "train_sources": [],  # no training — inference only
+        "test_sources": [
+            {"name": "Dataset001_HumanNeuronsDodt", "use": "test"},
+            {"name": "Dataset002_MiceNeuronsDodt", "use": "test"},
+            {"name": "Dataset003_RatNeuronsDodt", "use": "test"},
+        ],
+    },
+# ── Exp 8: Train Human DODT+Oblique → Test on both ──────────────────
+    {
+        "dataset_id":   108,
+        "dataset_name": "Dataset108_XM_Human_DodtOblique",
+        "description":  "Mixed-modality human: DODT+Oblique combined",
+        "train_sources": [
+            {"name": "Dataset001_HumanNeuronsDodt",    "use": "train"},
+            {"name": "Dataset004_HumanNeuronsOblique", "use": "train"},
+        ],
+        "test_sources": [
+            {"name": "Dataset001_HumanNeuronsDodt",    "use": "test"},
+            {"name": "Dataset004_HumanNeuronsOblique", "use": "test"},
         ],
     },
 ]

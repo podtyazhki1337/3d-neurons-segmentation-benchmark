@@ -47,9 +47,11 @@ def find_experiment(exp_id: int) -> dict | None:
 
 
 def get_checkpoint_path(exp: dict) -> str:
+    # model_from: use checkpoint from another experiment (inference-only mode)
+    model_ds = exp.get("model_from", exp["dataset_name"])
     return os.path.join(
         config.nnunet_results,
-        exp["dataset_name"],
+        model_ds,
         f"nnUNetTrainer_Comet__nnUNetPlans__{config.configuration}",
         f"fold_{config.folds[0]}",
         "checkpoint_best.pth",
@@ -283,9 +285,11 @@ def main():
             print(f"    {e['dataset_id']}: {e['dataset_name']}")
         sys.exit(1)
 
+    model_from = exp.get("model_from", exp["dataset_name"])
     print(f"{'='*70}")
     print(f"  Cross-Domain Evaluation")
-    print(f"  Model: {exp['dataset_name']}")
+    print(f"  Experiment: {exp['dataset_name']}")
+    print(f"  Model from: {model_from}")
     print(f"  Description: {exp['description']}")
     print(f"  Test sources: {[s['name'] for s in exp['test_sources']]}")
     print(f"  TTA: {'OFF' if args.no_tta else 'ON'}")

@@ -98,6 +98,10 @@ def create_merged_dataset(experiment: dict, force: bool = False):
             shutil.rmtree(preproc_dir)
             if os.path.exists(raw_dir):
                 shutil.rmtree(raw_dir)
+                # Inference-only experiments (model_from) — no dataset to create
+            if not experiment.get("train_sources"):
+                print(f"  ⏭️  Skipping {ds_name} — inference-only (model_from)")
+                return
         else:
             print(f"  ❌  {preproc_dir} exists. Use --force to overwrite.")
             return
