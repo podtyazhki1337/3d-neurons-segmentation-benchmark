@@ -135,9 +135,9 @@ gpu_id = 0
 #  9.  Logging — Comet ML
 # ══════════════════════════════════════════════════════════════════════════════
 
-comet_api_key    = "Yb0Ffy5WaM3qRxJ3qZAjvcboV"           # fill in or use COMET_API_KEY env var
+comet_api_key    = ""           # fill in or use COMET_API_KEY env var
 comet_project    = "nnunet3d-neurons"
-comet_workspace  = "podtyazhki1337"           # fill in
+comet_workspace  = ""           # fill in
 
 
 # ══════════════════════════════════════════════════════════════════════════════
