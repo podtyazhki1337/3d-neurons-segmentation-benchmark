@@ -18,7 +18,7 @@ Supported model families include:
 
 This repository contains **code only**.  
 Datasets and pretrained results are **not included** here.
-The weights for the models are available https://huggingface.co/Podtyazhki1337/3d-neurons-segmentation 
+The weights for the models are available here https://huggingface.co/Podtyazhki1337/3d-neurons-segmentation .
 Input data should be prepared separately as 3D volumes with corresponding masks.
 
 ## Usage
